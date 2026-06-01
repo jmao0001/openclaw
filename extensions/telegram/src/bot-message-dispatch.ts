@@ -1770,6 +1770,7 @@ export const dispatchTelegramMessage = async ({
                         segment.lane === "answer" &&
                         !reply.hasMedia &&
                         !hasExecApprovalPayload(effectivePayload) &&
+                        telegramButtons === undefined &&
                         answerLane.hasStreamedMessage &&
                         !activeAnswerDraftIsToolProgressOnly;
 
