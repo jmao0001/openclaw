@@ -899,6 +899,7 @@ export const dispatchTelegramMessage = async ({
           renderText: renderStreamText,
           onSupersededPreview: (superseded) => {
             if (superseded.retain) {
+              lanes[laneName].activeChunkIndex += 1;
               return;
             }
             void bot.api.deleteMessage(chatId, superseded.messageId).catch((err: unknown) => {
@@ -1076,7 +1077,7 @@ export const dispatchTelegramMessage = async ({
     }
     lane.hasStreamedMessage = false;
     lane.finalized = false;
-    lane.activeChunkIndex += 1;
+    lane.activeChunkIndex = 0;
     if (lane === answerLane) {
       resetAnswerToolProgressDraft();
     }
@@ -1767,10 +1768,11 @@ export const dispatchTelegramMessage = async ({
                         streamMode === "partial" &&
                         info.kind === "block" &&
                         !reply.hasMedia &&
-                        !hasExecApprovalPayload(effectivePayload);
+                        !hasExecApprovalPayload(effectivePayload) &&
+                        Boolean(answerLane.stream);
 
                       if (skipTextOnlyBlock) {
-                        blockDelivered = true;
+                        blockDelivered = blockDelivered || answerLane.hasStreamedMessage;
                         continue;
                       }
 

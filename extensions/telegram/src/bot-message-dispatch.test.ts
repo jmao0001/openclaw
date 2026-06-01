@@ -3573,6 +3573,54 @@ describe("dispatchTelegramMessage draft streaming", () => {
     await sidePromise;
   });
 
+  it("does not drop the first chunk of a long final after a generic lane rotation", async () => {
+    setNoAbort();
+    const { answerDraftStream } = setupDraftStreams({ answerMessageId: 2001 });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ dispatcherOptions, replyOptions }) => {
+        // Force a generic rotation (tool-progress handoff)
+        await replyOptions?.onToolStart?.({ name: "exec", phase: "start" });
+        await dispatcherOptions.deliver(
+          { text: "A".repeat(4000) + "B".repeat(4000) },
+          { kind: "final" },
+        );
+        return { queuedFinal: true };
+      },
+    );
+
+    await dispatchWithContext({
+      context: createContext(),
+      textLimit: 4000,
+    });
+
+    // The stream should receive the first chunk ("A"s), not skip it because of activeChunkIndex being falsely incremented
+    expect(answerDraftStream.update).toHaveBeenCalledWith("A".repeat(4000));
+  });
+
+  it("does not suppress text-only blocks as delivered when answer draft is inactive", async () => {
+    setNoAbort();
+    setupDraftStreams({ answerMessageId: 2001 });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver({ text: "forced block" }, { kind: "block" });
+      await dispatcherOptions.deliver({ text: "final text" }, { kind: "final" });
+      return { queuedFinal: true };
+    });
+
+    // Provide a config that disables partial answer streams (e.g. block mode explicitly enabled)
+    await dispatchWithContext({
+      context: createContext(),
+      streamMode: "partial",
+      telegramCfg: { streaming: { mode: "partial", block: { enabled: true } } } as any,
+    });
+
+    const deliveredTexts = deliverReplies.mock.calls.flatMap((call) =>
+      ((call[0] as { replies?: Array<{ text?: string }> }).replies ?? []).map(
+        (reply) => reply.text,
+      ),
+    );
+    expect(deliveredTexts).toContain("forced block");
+  });
+
   it("keeps queued room events abortable after their source dispatch returns", async () => {
     const historyKey = "telegram:group:-100123";
     const groupHistories = new Map([[historyKey, []]]);
